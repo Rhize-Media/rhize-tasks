@@ -56,6 +56,27 @@ the existing `createTestPathPolicy` temp-HOME test policy; the sanitizer scan (s
 personal identifiers, internal hostnames) is run and reported before any visibility change;
 tag `v0.5.0` exists on the cleanup+installer commit.
 
+## File-level touchpoints (this repository only)
+
+Removed (cleanup commit): `.claude-plugin/plugin.json`, `.codex-plugin/plugin.json`, `GUIDE.md`,
+`commands/doctor.md`, `commands/preferences.md`, `commands/reconcile.md`,
+`commands/review-opportunities.md`, `commands/setup.md`, `commands/today.md`,
+`setup/manifest.json`, and every `skills/*/SKILL.md` plus its sibling `skills/*/agents/
+openai.yaml` (`manage-task-preferences`, `plan-my-day`, `reconcile-rhize-tasks`,
+`review-task-opportunities`, `rhize-tasks-doctor`, `rhize-tasks-setup`).
+Modified (cleanup commit): `README.md` (top section rewritten per "Intended semantic delta"
+item 1), `package.json` (the `validate` script's now-deleted `setup/manifest.json` check
+removed — an orphan created directly by this cleanup), `tests/e2e/dashboard.test.mjs` (its
+"shared skills and Claude commands preserve the local planning boundary" test removed — it
+asserted content of the `skills/`/`commands/` files this commit deletes, and has no remaining
+subject matter in this repository; the runtime-facing dashboard tests in the same file are kept
+unchanged).
+Modified (installer commit): `installer/install.mjs` (`--check`, `sourceRef`/`sourceCommit`),
+`service/src/api/context.mjs` (`doctor()` provenance/`sourceDrift`), `service/bin/
+rhize-tasks.mjs` (`doctor --expect-source-ref`), `tests/connectors/reminders-process.test.mjs`
+and/or a new installer test file (coverage for `--check` and provenance), `package.json`
+(version bump to `0.5.0`).
+
 ## Implementation order
 
 1. Cleanup commit: remove plugin-only files, rewrite README top section.

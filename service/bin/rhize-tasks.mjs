@@ -25,6 +25,17 @@ function exactArgs(actual, expected) {
   if (actual.length !== expected.length || actual.some((value, index) => value !== expected[index])) throw new TypeError('invalid_arguments');
 }
 
+// `doctor` otherwise takes only the literal `--json` (via exactArgs above); this adds one
+// optional trailing flag, `--expect-source-ref <tag>`, so a caller (the plugin's setup/doctor
+// skill) can ask doctor to report whether the installed source ref matches what it expects.
+function parseDoctorArgs(actual) {
+  if (actual.length === 1 && actual[0] === '--json') return {expectSourceRef: null};
+  if (actual.length === 3 && actual[0] === '--json' && actual[1] === '--expect-source-ref' && typeof actual[2] === 'string' && actual[2].length > 0) {
+    return {expectSourceRef: actual[2]};
+  }
+  throw new TypeError('invalid_arguments');
+}
+
 function writeJson(write, value) {
   write(`${JSON.stringify(value)}\n`);
 }
@@ -212,8 +223,8 @@ export async function runCli(args, {
       return result;
     }
     if (command === 'doctor') {
-      exactArgs(rest, ['--json']);
-      const result = await context.doctor();
+      const {expectSourceRef} = parseDoctorArgs(rest);
+      const result = await context.doctor({expectSourceRef});
       writeJson(stdout, {ok: true, ...result});
       return result;
     }

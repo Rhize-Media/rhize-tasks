@@ -129,6 +129,19 @@ export async function checkLoopbackPort(port, {
   if (!attempt.free) throw Object.assign(new Error('own_server_stop_did_not_free_port'), {code: 'own_server_stop_did_not_free_port'});
 }
 
+// Read-only counterpart to checkLoopbackPort, for `--check`: it must never
+// stop a process it finds running, even our own — `--check` promises to
+// write nothing and touch nothing, and killing a live `serve` process is a
+// mutation. Reports enough for the caller to judge readiness without acting.
+export async function probePortReadiness(port, {createServerImpl = createServer, probeOwnServer = defaultProbeOwnServer} = {}) {
+  const attempt = await tryBind(port, createServerImpl);
+  if (attempt.free) return {port, status: 'free'};
+  if (attempt.error?.code !== 'EADDRINUSE') return {port, status: 'error', reason: 'loopback_port_check_failed'};
+  const ownServer = await probeOwnServer(port).catch(() => null);
+  if (ownServer) return {port, status: 'own_server_running', version: ownServer.version};
+  return {port, status: 'blocked', reason: 'loopback_port_in_use'};
+}
+
 // `>= 22` alone is too loose: node:sqlite (service/src/storage/database.mjs)
 // needed --experimental-sqlite for part of the 22.x line, the plist passes
 // no flags, and a build that lacks it dies at import with
@@ -145,17 +158,16 @@ export async function checkNodeSqliteAvailable({run = runProcess, nodePath = pro
   if (!result || result.code !== 0 || result.timedOut || result.stdout?.trim() !== 'ok') throw new Error('node_sqlite_unavailable');
 }
 
-export async function validatePrerequisites({
+// Platform/Node/tool checks only — no filesystem mutation. Factored out of
+// validatePrerequisites so `--check` (below) can run the exact same
+// judgments without the supportDir mkdir/chmod side effects that make
+// validatePrerequisites unsafe to call from a non-mutating preflight.
+export async function probePlatformReadiness({
   platform = process.platform,
   macOSVersion,
   nodeVersion = process.versions.node,
   nodePath = process.execPath,
-  supportDir = defaultInstallPaths().supportDir,
-  port = 43179,
   accessImpl = access,
-  mkdirImpl = mkdir,
-  chmodImpl = chmod,
-  checkPort = checkLoopbackPort,
   run = runProcess,
 } = {}) {
   if (platform !== 'darwin') throw new Error('macos_required');
@@ -180,11 +192,28 @@ export async function validatePrerequisites({
     executableCheck('/usr/bin/codesign', accessImpl),
     executableCheck('/usr/bin/sw_vers', accessImpl),
   ]).catch(() => { throw new Error('required_macos_tool_missing'); });
+  return {platform, macOSVersion: detectedVersion, nodeMajor: Number.parseInt(nodeVersion.split('.')[0], 10)};
+}
+
+export async function validatePrerequisites({
+  platform = process.platform,
+  macOSVersion,
+  nodeVersion = process.versions.node,
+  nodePath = process.execPath,
+  supportDir = defaultInstallPaths().supportDir,
+  port = 43179,
+  accessImpl = access,
+  mkdirImpl = mkdir,
+  chmodImpl = chmod,
+  checkPort = checkLoopbackPort,
+  run = runProcess,
+} = {}) {
+  const base = await probePlatformReadiness({platform, macOSVersion, nodeVersion, nodePath, accessImpl, run});
   await mkdirImpl(supportDir, {recursive: true, mode: 0o700});
   await chmodImpl(supportDir, 0o700);
   await accessImpl(supportDir, fsConstants.W_OK);
   await checkPort(port, {pidPath: servePidPath(supportDir)});
-  return {platform, macOSVersion: detectedVersion, nodeMajor: Number.parseInt(nodeVersion.split('.')[0], 10), port};
+  return {...base, port};
 }
 
 function xmlEscape(value) {
@@ -685,6 +714,138 @@ export async function waitForHelperSocketReady(socketPath, {
   throw Object.assign(new Error('helper_socket_not_ready'), {code: 'helper_socket_not_ready', cause: lastError});
 }
 
+// `--check` cannot afford the ~2 minute `swift build` install() runs to prove
+// the toolchain can actually produce a binary (finding-#6-adjacent: paying
+// that cost just to print a readiness report defeats the point of a fast
+// preflight). This is a lighter, non-mutating signal: swift is callable, and
+// — the actual CLT-vs-full-Xcode distinction the README warns about —
+// whether `xcodebuild` resolves at all. A CLT-only toolchain answers
+// `xcodebuild -version` with a "requires Xcode" error; a full Xcode install
+// succeeds. Treated as advisory (not blocking) since the README already
+// notes some CLT-only installs work anyway.
+export async function checkSwiftToolchain({run = runProcess} = {}) {
+  const result = {swiftAvailable: false, swiftVersion: null, xcodeFullToolchain: null};
+  try {
+    const swiftResult = await run('/usr/bin/swift', ['--version'], {timeoutMs: 5_000, maxOutputBytes: 2_048});
+    if (swiftResult && swiftResult.code === 0 && !swiftResult.timedOut) {
+      result.swiftAvailable = true;
+      result.swiftVersion = swiftResult.stdout?.trim().split('\n')[0] ?? null;
+    }
+  } catch { /* leave swiftAvailable false */ }
+  try {
+    const xcodebuildResult = await run('/usr/bin/xcodebuild', ['-version'], {timeoutMs: 5_000, maxOutputBytes: 2_048});
+    result.xcodeFullToolchain = Boolean(xcodebuildResult && xcodebuildResult.code === 0 && !xcodebuildResult.timedOut);
+  } catch {
+    result.xcodeFullToolchain = false;
+  }
+  return result;
+}
+
+// Read-only summary of whatever is already installed, for `--check`'s "here
+// is what's already there" plan output. Never throws — a missing or
+// unreadable manifest just means no prior install.
+async function readExistingInstallationSummary(paths, readFileImpl = readFile) {
+  try {
+    const manifest = JSON.parse(await readFileImpl(paths.installationManifestPath, 'utf8'));
+    if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) return null;
+    return {
+      version: manifest.version ?? null,
+      sourceRef: manifest.sourceRef ?? null,
+      sourceCommit: manifest.sourceCommit ?? null,
+      runtimePath: manifest.runtimePath ?? null,
+      signingIdentity: manifest.signingIdentity ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+// Records where the installed code actually came from, so `doctor` (and a
+// future reinstall) can tell a pinned-tag checkout from an arbitrary branch,
+// and detect drift against what the plugin meant to install. `sourceRoot` is
+// `installerDir/..` — the same directory install() copies `runtimeEntries`
+// from. Returns nulls, never throws, when the source isn't a git checkout at
+// all (git missing, or `git rev-parse HEAD` fails outside a repository).
+export async function detectSourceProvenance({sourceRoot, run = runProcess} = {}) {
+  let sourceCommit = null;
+  try {
+    const result = await run('git', ['-C', sourceRoot, 'rev-parse', 'HEAD'], {timeoutMs: 5_000, maxOutputBytes: 1_024});
+    if (result && result.code === 0 && !result.timedOut && typeof result.stdout === 'string') sourceCommit = result.stdout.trim() || null;
+  } catch {
+    sourceCommit = null;
+  }
+  if (!sourceCommit) return {sourceRef: null, sourceCommit: null};
+  let sourceRef = null;
+  try {
+    const tagResult = await run('git', ['-C', sourceRoot, 'describe', '--tags', '--exact-match'], {timeoutMs: 5_000, maxOutputBytes: 1_024});
+    if (tagResult && tagResult.code === 0 && !tagResult.timedOut && typeof tagResult.stdout === 'string' && tagResult.stdout.trim()) sourceRef = tagResult.stdout.trim();
+  } catch { /* fall through to the branch fallback below */ }
+  if (!sourceRef) {
+    try {
+      const branchResult = await run('git', ['-C', sourceRoot, 'rev-parse', '--abbrev-ref', 'HEAD'], {timeoutMs: 5_000, maxOutputBytes: 1_024});
+      if (branchResult && branchResult.code === 0 && !branchResult.timedOut && typeof branchResult.stdout === 'string') sourceRef = branchResult.stdout.trim() || null;
+    } catch { /* leave sourceRef null */ }
+  }
+  return {sourceRef, sourceCommit};
+}
+
+// Non-mutating preflight for `--check`: the same platform/Node/tool
+// judgments validatePrerequisites makes, plus toolchain/port/existing-install
+// signals, assembled into a plan — and NOTHING under supportDir/runtimeDir is
+// ever created, chmod'd, or written. `ready`/`blockingReason` mirror the exit
+// contract main() uses (0 when ready, 1 with the first blocking reason).
+export async function checkInstall({
+  paths = defaultInstallPaths(),
+  port = 43179,
+  run = runProcess,
+  nodePath = process.execPath,
+  nodeVersion = process.versions.node,
+  platform = process.platform,
+  macOSVersion,
+  accessImpl = access,
+  sourceRoot = pluginRoot,
+  readFileImpl = readFile,
+  createServerImpl = createServer,
+  probeOwnServer = defaultProbeOwnServer,
+} = {}) {
+  const checks = {};
+  let blockingReason = null;
+
+  try {
+    checks.platform = await probePlatformReadiness({platform, macOSVersion, nodeVersion, nodePath, accessImpl, run});
+  } catch (error) {
+    checks.platform = {error: error.message};
+    blockingReason ??= error.message;
+  }
+
+  checks.swiftToolchain = await checkSwiftToolchain({run});
+  if (blockingReason === null && !checks.swiftToolchain.swiftAvailable) blockingReason = 'swift_toolchain_unavailable';
+
+  // Reported for its own sake (the install plan below calls out codesigning explicitly), but
+  // not a separate blocking gate: probePlatformReadiness above already checks codesign
+  // executability with this same accessImpl, bucketed into 'required_macos_tool_missing' with
+  // the other required tools, so a missing codesign already surfaced via `checks.platform`.
+  checks.codesignAvailable = await executableCheck('/usr/bin/codesign', accessImpl).then(() => true, () => false);
+
+  checks.port = await probePortReadiness(port, {createServerImpl, probeOwnServer});
+  if (blockingReason === null && checks.port.status === 'blocked') blockingReason = checks.port.reason;
+
+  let targetVersion = null;
+  try {
+    const packageDocument = JSON.parse(await readFileImpl(path.join(sourceRoot, 'package.json'), 'utf8'));
+    targetVersion = packageDocument.version ?? null;
+  } catch { /* leave targetVersion null — reported as unknown in the plan */ }
+
+  checks.existingInstallation = await readExistingInstallationSummary(paths, readFileImpl);
+
+  return {
+    ready: blockingReason === null,
+    blockingReason,
+    checks,
+    plan: {sourceRoot, targetVersion, installPaths: paths, port},
+  };
+}
+
 export async function install({
   paths = defaultInstallPaths(),
   pathPolicy = productionPathPolicy(),
@@ -700,6 +861,7 @@ export async function install({
   keychain = createKeychain({spawnFile: run}),
   detectSigningIdentity = resolveSigningIdentity,
   probeHelperSocketReady = waitForHelperSocketReady,
+  detectProvenance = detectSourceProvenance,
 } = {}) {
   await verifyInstallPaths(paths, pathPolicy);
   // sun_path has a hard 104-byte limit (including the NUL terminator the
@@ -721,6 +883,7 @@ export async function install({
   const {nodePath: resolvedNodePath, warnings: nodePathWarnings} = await resolveInstallNodePath(nodePath, checkNodePathExecutable, {verifyCapable: verifyNodePathCapable});
   const packagePath = path.join(sourceRoot, 'native', 'reminders-helper');
   const {identity: codesignIdentity, kind: signingIdentityKind} = await detectSigningIdentity({run});
+  const {sourceRef, sourceCommit} = await detectProvenance({sourceRoot, run});
   await runChecked('/usr/bin/swift', ['build', '-c', 'release', '--package-path', packagePath], {timeoutMs: 120_000}, run);
 
   await mkdir(paths.runtimeDir, {recursive: true, mode: 0o700});
@@ -862,6 +1025,7 @@ export async function install({
       schemaVersion: 1, version, runtimePath, cliPath, appPath, label,
       helperLabel, helperAppPath: paths.helperAppPath, helperSocketPath: paths.helperSocketPath,
       nodePath: resolvedNodePath, signingIdentity: signingIdentityKind,
+      sourceRef, sourceCommit,
     }, null, 2)}\n`;
 
     await assertInstallPathIdentities(pathIdentities);
@@ -914,6 +1078,7 @@ export async function install({
       appPath, helperAppPath: paths.helperAppPath, helperSocketPath: paths.helperSocketPath,
       launchAgentPath: paths.launchAgentPath, helperLaunchAgentPath: paths.helperLaunchAgentPath,
       runtimePath, version, label, helperLabel, nodePath: resolvedNodePath, signingIdentity: signingIdentityKind,
+      sourceRef, sourceCommit,
       ...(nodePathWarnings.length ? {nodePathWarnings} : {}),
     };
   } catch (activationFailure) {
@@ -1063,7 +1228,22 @@ export async function runRemindersAccessProbe({approved, helperPath, listId, ope
   return {ok: true, externalId};
 }
 
+async function runCheck() {
+  try {
+    const report = await checkInstall();
+    process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+    process.exitCode = report.ready ? 0 : 1;
+  } catch (error) {
+    process.stdout.write(`${JSON.stringify({ready: false, blockingReason: error.message}, null, 2)}\n`);
+    process.exitCode = 1;
+  }
+}
+
 async function main() {
+  if (process.argv.slice(2).includes('--check')) {
+    await runCheck();
+    return;
+  }
   try {
     const result = await install();
     process.stdout.write(`${JSON.stringify({ok: true, ...result})}\n`);

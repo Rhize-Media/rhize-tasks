@@ -269,6 +269,21 @@ function defaultSystemProbe({home = homedir()} = {}) {
     async remindersHelperConfig() {
       try { return await resolveRemindersHelperConfig({home}); } catch { return null; }
     },
+    // installer/install.mjs records where the installed code actually came from
+    // (`sourceRef`/`sourceCommit` in installation.json) whenever the source checkout was a git
+    // repository. Surfaced separately from installedRuntimeVersion() above so a manifest
+    // written before this field existed still resolves version drift correctly (both null here
+    // just means "unknown provenance", not "no manifest").
+    async installationProvenance() {
+      try {
+        const manifest = await readInstallationManifest(home);
+        if (!manifest) return null;
+        return {
+          sourceRef: typeof manifest.sourceRef === 'string' ? manifest.sourceRef : null,
+          sourceCommit: typeof manifest.sourceCommit === 'string' ? manifest.sourceCommit : null,
+        };
+      } catch { return null; }
+    },
   };
 }
 
@@ -485,21 +500,26 @@ export async function createServiceContext({databasePath, database, keychain, co
     auth: {getToken: () => credentialStore.get('media.rhize.tasks.api', 'bearer'), provisioned: false},
     close() { db.close(); },
     async today() { const plan = repositories.plans.latest(); if (!plan) throw new ApiError('plan_not_found', 404); const operations = repositories.operations.listForPlan(plan.planRevision).map(operation => ({...operation, reconciliationResult: repositories.operations.execution(operation.id)?.result ?? null})); return projectTodayView({plan, tasks: repositories.tasks.list(), operations, profile: preferences.get('profile'), freshness: preferences.get('connector_freshness') ?? {}, approvedOutsideLabels: preferences.get('outside_labels') ?? {}, now: now().toISOString()}); },
-    async doctor() {
+    async doctor({expectSourceRef = null} = {}) {
       const registry = await injectedRegistry.get(); const connectorStatus = {};
       for (const system of systems) { try { connectorStatus[system] = registry[system] && await registry[system].health() ? 'healthy' : 'offline'; } catch (error) { connectorStatus[system] = error?.kind === 'authorization' ? 'revoked' : 'offline'; } }
       const lastRoutineRunRow = db.prepare("select max(completed_at) as completedAt from routine_runs where state = 'completed'").get();
-      const [agentLoaded, plistNodePathExists, installedRuntimeVersion, remindersHelperConfig] = await Promise.all([
+      const [agentLoaded, plistNodePathExists, installedRuntimeVersion, remindersHelperConfig, installationProvenance] = await Promise.all([
         systemProbe.agentLoaded().catch(() => null),
         systemProbe.plistNodePathExists().catch(() => null),
         systemProbe.installedRuntimeVersion().catch(() => null),
         typeof systemProbe.remindersHelperConfig === 'function' ? systemProbe.remindersHelperConfig().catch(() => null) : Promise.resolve(null),
+        typeof systemProbe.installationProvenance === 'function' ? systemProbe.installationProvenance().catch(() => null) : Promise.resolve(null),
       ]);
+      const sourceRef = installationProvenance?.sourceRef ?? null;
+      const sourceCommit = installationProvenance?.sourceCommit ?? null;
       return {
         version: VERSION, database: 'ready', activation: await activation.canActivate(), paused: await pause.isPaused(), connectors: connectorStatus,
         agentLoaded, plistNodePathExists, runtimeVersionMatch: installedRuntimeVersion === null ? null : installedRuntimeVersion === VERSION,
         remindersHelper: remindersHelperConfig && typeof remindersHelperConfig === 'object' ? {transport: remindersHelperConfig.socketPath ? 'socket' : 'spawn', helperPath: remindersHelperConfig.helperPath ?? null, socketPath: remindersHelperConfig.socketPath ?? null} : null,
         lastRoutineRun: lastRoutineRunRow?.completedAt ?? null,
+        sourceRef, sourceCommit,
+        ...(typeof expectSourceRef === 'string' && expectSourceRef.length > 0 ? {sourceDrift: sourceRef !== expectSourceRef} : {}),
       };
     },
     async cleanup(request) {
