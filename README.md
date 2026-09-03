@@ -247,20 +247,19 @@ The data choice controls local Application Support data. The item choice separat
 
 ## Validation
 
-No automated test performs live connector I/O. The test suite uses injected fakes and temporary SQLite databases. Run these from the plugin directory (`rhize-tasks/`) unless noted otherwise:
+No automated test performs live connector I/O. The test suite uses injected fakes and temporary SQLite databases. Run these from the repository root:
 
 ```bash
-npm test
+node --test
 swift test --package-path native/reminders-helper
-python3 ../tests/rhize-ops/test_delegation_contract.py
+node installer/install.mjs --check
 ```
 
-`python3 -m unittest tests.test_bump_version -v` lives in the parent `rhize-plugins` repo, not this plugin, so it needs that directory as its working directory — run it as `(cd .. && python3 -m unittest tests.test_bump_version -v)` from `rhize-tasks/`, or `python3 -m unittest tests.test_bump_version -v` directly from the `rhize-plugins` root.
+`node --test` covers the service, installer (including `--check` and source provenance), and connectors. The delegation parser's producer-side contract (the message format the `rhize-ops` plugin's `delegate-to-teammate` skill writes) is pinned in the marketplace repository (`Rhize-Media/rhize-plugins`, `tests/rhize-ops/fixtures/delegation-parser-contract.json`, regenerated from this repository at a tagged release); the parser's own tests live here.
 
-`npm run validate` is not a release gate — it only checks that `package.json` and `setup/manifest.json` are syntactically valid JSON. Treat it as a quick manifest sanity check, not a substitute for the tests above.
+`npm run validate` is not a release gate — it only checks that `package.json` is syntactically valid JSON. Treat it as a quick manifest sanity check, not a substitute for the tests above.
 
-Repository release validation also checks both plugin manifests, the marketplace, generated skill map, Claude plugin validation, JSON/plist syntax, deterministic generation, and whitespace. A real end-user Mac acceptance remains mandatory before enabling writes: approve a disposable Jira issue and disposable Calendar/Reminder containers, complete setup, move and complete one sample, exercise pause/restart/catch-up/revocation/uninstall, and verify outside records are unchanged.
-
+A real end-user Mac acceptance remains mandatory before enabling writes: approve a disposable Jira issue and disposable Calendar/Reminder containers, complete setup, move and complete one sample, exercise pause/restart/catch-up/revocation/uninstall, and verify outside records are unchanged.
 ## Current 0.x boundary
 
 Rhize Tasks is a Mac-local planning service, not a cloud sync product or a general Jira automation engine. The first release handles the exact completion signal from a plugin-created reminder by prompting an approval-required Jira comment. Choosing among site-specific Done/Blocked/Partial transitions still requires the user to review the actual Jira workflow; the plugin does not guess transition IDs. Slack messages outside the strict delegation contract are ignored.
