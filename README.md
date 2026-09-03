@@ -1,11 +1,36 @@
-# Rhize Tasks
+# Rhize Tasks (runtime)
 
-Rhize Tasks gives you one realistic answer to "what should I work on now?" — without pretending
-Jira is your calendar or that your personal calendar belongs to Rhize.
+This repository is the **Rhize Tasks runtime**: the local-first daily planning service, its
+installer, and the macOS Reminders helper. It gives one realistic answer to "what should I work
+on now?" — without pretending Jira is your calendar or that your personal calendar belongs to
+Rhize.
 
-Rhize Tasks is the local-first unified planning authority for the configured user's Rhize, client, other-company, and personal work. It reads approved Jira, Google Calendar, Apple Reminders, and structured Slack inputs, produces one today-first plan, and writes only approved focus blocks and reminders inside dedicated boundaries.
+**The Claude Code / Codex plugin that drives this runtime lives separately**, as `rhize-tasks`
+in [`Rhize-Media/rhize-plugins`](https://github.com/Rhize-Media/rhize-plugins). The plugin ships
+the skills, slash commands, and marketplace wiring; this repository ships the code those skills
+call into. Most users should start from the plugin's setup skill (`/rhize-tasks:setup`), not
+from this repository directly.
 
-The plugin is part of the Rhize OS **Get Your Time Back** module. Its purpose is practical: keep assigned work visible, surface urgent work the assignee is well suited to take on, fit the work into real capacity, and carry unfinished work forward without letting an automation silently take over their calendar or task systems.
+Rhize Tasks is the local-first unified planning authority for the configured user's Rhize,
+client, other-company, and personal work. It reads approved Jira, Google Calendar, Apple
+Reminders, and structured Slack inputs, produces one today-first plan, and writes only approved
+focus blocks and reminders inside dedicated boundaries. Its purpose is practical: keep assigned
+work visible, surface urgent work the assignee is well suited to take on, fit the work into real
+capacity, and carry unfinished work forward without letting an automation silently take over
+their calendar or task systems.
+
+## How the plugin bootstraps this runtime
+
+The plugin never vendors this code. Its setup skill clones a pinned release tag of this
+repository into `~/Library/Application Support/Rhize Tasks/source/<tag>/`, runs
+`node installer/install.mjs --check` there to confirm the machine is ready — platform, Node
+version, Swift/Xcode toolchain, codesign availability, loopback port, and any existing
+installation, printed as a plan and without writing anything under `runtime/` or Application
+Support — and only then runs the real install (`node installer/install.mjs`, or
+`npm run install:local`) from that checkout. Re-running setup against a newer tag upgrades the
+existing installation in place: `install()` is transactional and version-aware, so an existing
+`installation.json` means an upgrade, not a reinstall, and local data (`state.sqlite`, Keychain
+entries) is untouched.
 
 ## Requirements
 

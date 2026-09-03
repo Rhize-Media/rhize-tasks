@@ -12,6 +12,6 @@
     "start": "node service/bin/rhize-tasks.mjs serve",
     "test": "node --test",
     "uninstall:local": "node installer/uninstall.mjs",
-    "validate": "node --input-type=module --eval \"for (const path of ['package.json', 'setup/manifest.json']) JSON.parse(await (await import('node:fs/promises')).readFile(path, 'utf8'))\""
+    "validate": "node --input-type=module --eval \"for (const path of ['package.json']) JSON.parse(await (await import('node:fs/promises')).readFile(path, 'utf8'))\""
   }
 }
