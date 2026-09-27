@@ -301,3 +301,5 @@ so their manifest remains consistent.
 Linux fixture tests do **not** prove macOS Swift/EventKit signing, TCC permissions, LaunchAgent
 activation, installation or live connector behavior. Preserve the local macOS release and
 explicit provider-approval checks described above before distributing a runtime release.
+
+CI acceptance (2026-09-27): the [PR run](https://github.com/Rhize-Media/rhize-tasks/actions/runs/36344042156) and [main run](https://github.com/Rhize-Media/rhize-tasks/actions/runs/36344980645) passed. This separate narrative-only change verifies push/PR path filters; settled zero-run evidence is recorded in the cross-repository hardening report.
