@@ -1,0 +1,12 @@
+{
+  "name": "rhize-tasks-ci",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "test": "npm --prefix ../.. test",
+    "validate": "npm --prefix ../.. run validate"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
+  }
+}

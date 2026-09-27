@@ -263,3 +263,41 @@ A real end-user Mac acceptance remains mandatory before enabling writes: approve
 ## Current 0.x boundary
 
 Rhize Tasks is a Mac-local planning service, not a cloud sync product or a general Jira automation engine. The first release handles the exact completion signal from a plugin-created reminder by prompting an approval-required Jira comment. Choosing among site-specific Done/Blocked/Partial transitions still requires the user to review the actual Jira workflow; the plugin does not guess transition IDs. Slack messages outside the strict delegation contract are ignored.
+
+## Environment variable contract
+
+Configuration and provider credentials belong to the existing local settings/Keychain flow.
+The following variables are read by tracked runtime, installer or test source. CI checks this
+table without reading environment values or calling a model.
+
+| Variable | Purpose | Requirement |
+| --- | --- | --- |
+| `RHIZE_TASKS_ALLOW_EPHEMERAL_NODE` | Opt into the installer's otherwise rejected ephemeral Node binary location (`1`). | Optional; installer only. |
+| `RHIZE_TASKS_SIGN_IDENTITY` | Explicit macOS signing identity override. | Optional; installer otherwise discovers an identity or uses ad-hoc signing. |
+| `HOME` | Host home directory forwarded to local helper subprocesses. | Required host environment. |
+| `LANG` | Host locale forwarded when present. | Optional host environment. |
+| `TMPDIR` | Host temporary directory forwarded when present. | Optional host environment. |
+
+The generic process runner defaults to forwarding the full ambient environment. Its reviewed
+source is hash-bound in the CI configuration, so changing that forwarding implementation
+requires reviewing the documentation contract again. The listed names describe repository
+reads; they do not claim that all possible child-process environment names are enumerated.
+
+## CI and release evidence
+
+Linux CI runs the existing `npm run validate` and `npm test` contracts and the deterministic
+environment-doc check. Runtime dependencies and install/build behavior remain unchanged. An
+isolated `.github/ci-tools` package pins TypeScript solely for the shared AST documentation
+checker. Its lockfile install is cached; it is not a runtime dependency.
+
+Main pushes and PRs targeting main run the vendored Infra job with a 20-minute upper bound
+and cancellation of superseded runs. Feature pushes do not duplicate PR builds. Markdown,
+root docs, `.claude`, `.wolf`, and `STATE.md` changes alone trigger no run. Such commits have no
+CI check result; a future required-check promotion must include tested code or a separately
+authorized manual run. Weekly grouped minor/patch CI-tool updates use the same checks; no
+auto-merge or Copilot dependency exists. Canonical Actions pins update through Infra vendoring
+so their manifest remains consistent.
+
+Linux fixture tests do **not** prove macOS Swift/EventKit signing, TCC permissions, LaunchAgent
+activation, installation or live connector behavior. Preserve the local macOS release and
+explicit provider-approval checks described above before distributing a runtime release.

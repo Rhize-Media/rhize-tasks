@@ -1,0 +1,2 @@
+# CI-only parser dependencies
+.github/ci-tools/node_modules/
