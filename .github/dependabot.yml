@@ -9,6 +9,10 @@ updates:
     groups:
       ci-tools-minor-patch:
         update-types: [minor, patch]
+    # The AST checker requires the TypeScript 5 compiler API; major migration is manual.
+    ignore:
+      - dependency-name: typescript
+        update-types: [version-update:semver-major]
   - package-ecosystem: github-actions
     directory: /
     schedule:

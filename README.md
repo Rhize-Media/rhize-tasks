@@ -303,3 +303,13 @@ activation, installation or live connector behavior. Preserve the local macOS re
 explicit provider-approval checks described above before distributing a runtime release.
 
 CI acceptance (2026-09-27): the [PR run](https://github.com/Rhize-Media/rhize-tasks/actions/runs/36344042156) and [main run](https://github.com/Rhize-Media/rhize-tasks/actions/runs/36344980645) passed. This separate narrative-only change verifies push/PR path filters; settled zero-run evidence is recorded in the cross-repository hardening report.
+
+### CI parser update policy
+
+Dependabot holds semantic-major updates only for `typescript` in `.github/ci-tools`.
+The documentation scanner requires the TypeScript 5 compiler API (`createSourceFile`
+and `ScriptTarget`); TypeScript 7.0.2 does not export that API. A parser migration
+requires a reviewed compatibility change. Weekly grouped minor/patch parser updates
+continue through CI. Application dependency updates and Actions updates retain their
+existing policies. This is an explicit compatibility and CI-cost policy, not a fix
+for the unresolved historical Dependabot HTTP 400 PR-creation errors.
