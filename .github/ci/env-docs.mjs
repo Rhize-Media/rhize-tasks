@@ -3,6 +3,8 @@ import path from 'node:path';
 import {createRequire} from 'node:module';
 import {execFileSync} from 'node:child_process';
 import {within,hash} from './lib.mjs';
+const variableName = /^[A-Z][A-Z0-9_]*$/;
+const familyName = /^[A-Z][A-Z0-9_]*\{[A-Z][A-Z0-9_]*\}$/;
 export function scanSource(ts, text, filename='input.ts') {
   const file = ts.createSourceFile(filename,text,ts.ScriptTarget.Latest,true);
   const names = new Set(); const dynamic = [];
@@ -40,15 +42,18 @@ export function checkEnvDocs(root,config) {
   const require = createRequire(path.join(within(root,config.workingDirectory),'package.json'));
   const ts = require('typescript');
   const readme = fs.readFileSync(within(root,config.envDocs.readme),'utf8');
-  const documented = new Set(); let header;
+  const documented = new Set(); const documentedFamilies = new Set(); let header;
   for (const line of readme.split('\n')) {
     if (!line.trim().startsWith('|')) {header=undefined;continue;}
     const cells=line.split('|').slice(1,-1).map(cell=>cell.trim());
     if (/^(variable|name|environment variable)$/i.test(cells[0] || '')) {
       header={purpose:cells.findIndex(c=>/^(purpose|description|scope|notes)$/i.test(c)),requirement:cells.findIndex(c=>/^(requirement|required\??|status)$/i.test(c))};continue;
     }
-    const name=/^`([A-Z][A-Z0-9_]*)`$/.exec(cells[0] || '');
-    if (name && header && header.purpose >= 0 && header.requirement >= 0 && cells[header.purpose] && /\b(required|optional|conditional)\b/i.test(cells[header.requirement] || '')) documented.add(name[1]);
+    const name=/^`([^`]+)`$/.exec(cells[0] || '');
+    if (name && header && header.purpose >= 0 && header.requirement >= 0 && cells[header.purpose] && /\b(required|optional|conditional)\b/i.test(cells[header.requirement] || '')) {
+      if (variableName.test(name[1])) documented.add(name[1]);
+      if (familyName.test(name[1])) documentedFamilies.add(name[1]);
+    }
   }
   const allow = new Set(['NODE_ENV','CI',...(config.envDocs.allow || [])]);
   const ignore = config.envDocs.ignore || [];
@@ -59,10 +64,17 @@ export function checkEnvDocs(root,config) {
     const result = scanSource(ts,fs.readFileSync(within(root,filename),'utf8'),filename); count++;
     for (const name of result.names) if (!allow.has(name) && !documented.has(name)) failures.push(`${filename}: README does not document ${name}`);
     const permitted = config.envDocs.dynamicAccess?.[filename] || [];
+    for (const item of permitted) {
+      if (item.families !== undefined && (!Array.isArray(item.families) || !item.families.length || item.families.some(name=>typeof name !== 'string' || !familyName.test(name)))) throw Error(`${filename}: invalid dynamic env families`);
+      if (item.names !== undefined && (!Array.isArray(item.names) || item.names.some(name=>typeof name !== 'string'))) throw Error(`${filename}: invalid dynamic env names`);
+    }
     for (const access of result.dynamic) {
-      const exception=permitted.find(item=>item.sourceHash === access.sourceHash && Array.isArray(item.names) && item.names.length && typeof item.reason === 'string' && item.reason.length > 15);
+      const exception=permitted.find(item=>item.sourceHash === access.sourceHash && (item.names?.length || item.families?.length) && typeof item.reason === 'string' && item.reason.length > 15);
       if (!exception) failures.push(`${filename}:${access.line}: unresolved dynamic env access (sourceHash ${access.sourceHash})`);
-      else for (const name of exception.names) if (!documented.has(name) && !allow.has(name)) failures.push(`${filename}: dynamic env name undocumented: ${name}`);
+      else {
+        for (const name of exception.names || []) if (!documented.has(name) && !allow.has(name)) failures.push(`${filename}: dynamic env name undocumented: ${name}`);
+        for (const family of exception.families || []) if (!documentedFamilies.has(family)) failures.push(`${filename}: dynamic env family undocumented: ${family}`);
+      }
     }
   }
   if (!count) throw Error('No active tracked source files scanned');
