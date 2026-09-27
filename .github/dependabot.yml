@@ -1,0 +1,25 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /.github/ci-tools
+    schedule:
+      interval: weekly
+      day: thursday
+    open-pull-requests-limit: 2
+    groups:
+      ci-tools-minor-patch:
+        update-types: [minor, patch]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: thursday
+    open-pull-requests-limit: 2
+    groups:
+      actions-minor-patch:
+        update-types: [minor, patch]
+    # Canonical action pins and manifest must update together through Infra vendoring.
+    ignore:
+      - dependency-name: actions/checkout
+      - dependency-name: actions/setup-node
+      - dependency-name: actions/cache

@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "profile": "infra",
+  "nodeVersion": "24",
+  "packageManager": {
+    "name": "npm",
+    "version": "11.6.2",
+    "lockfile": ".github/ci-tools/package-lock.json"
+  },
+  "workingDirectory": ".github/ci-tools",
+  "scripts": {
+    "test": "test"
+  },
+  "notApplicable": {
+    "typecheck": "Runtime is plain JavaScript without a typecheck contract; existing fixture tests are authoritative.",
+    "lint": "No lint configuration exists; preserve existing validate and test scripts.",
+    "build": "Dependency-free runtime has no application build; macOS Swift signing remains a local release check."
+  },
+  "additionalChecks": [
+    "validate"
+  ],
+  "envDocs": {
+    "readme": "README.md",
+    "roots": [
+      "service",
+      "installer",
+      "tests",
+      ".github/ci-tools"
+    ],
+    "dynamicAccess": {
+      "service/src/connectors/process-runner.mjs": [
+        {
+          "sourceHash": "23eefb2318894781995655e0f231f2aa09fbbcf705aa3a43f1548873a81137e2",
+          "names": [
+            "HOME",
+            "LANG",
+            "TMPDIR",
+            "RHIZE_TASKS_ALLOW_EPHEMERAL_NODE",
+            "RHIZE_TASKS_SIGN_IDENTITY"
+          ],
+          "reason": "Reviewed default whole-environment forwarding to child processes; names here document known repository reads, not a claim that ambient forwarding is finite."
+        }
+      ]
+    }
+  }
+}
