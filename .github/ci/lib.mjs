@@ -78,7 +78,8 @@ export function validatePreview(deployment,status,config,sha) {
   if (deployment.sha !== sha || deployment.creator?.login !== 'vercel[bot]' || deployment.production_environment !== false || !/^preview$/i.test(deployment.environment)) throw Error('Untrusted preview deployment identity');
   if (deployment.payload?.projectId !== config.projectId || status.state !== 'success') throw Error('Preview project/status mismatch');
   const url = new URL(status.environment_url);
-  if (url.protocol !== 'https:' || url.username || url.password || url.port || !url.hostname.endsWith('.vercel.app') || !config.hostnamePattern?.startsWith('^') || !config.hostnamePattern.endsWith('$') || !(new RegExp(config.hostnamePattern)).test(url.hostname) || (config.productionHosts || []).includes(url.hostname)) throw Error('Unsafe preview hostname');
+  const hasCredentials = Boolean(url.username || url.password);
+  if (url.protocol !== 'https:' || hasCredentials || url.port || !url.hostname.endsWith('.vercel.app') || !config.hostnamePattern?.startsWith('^') || !config.hostnamePattern.endsWith('$') || !(new RegExp(config.hostnamePattern)).test(url.hostname) || (config.productionHosts || []).includes(url.hostname)) throw Error('Unsafe preview hostname');
   return url.origin;
 }
 

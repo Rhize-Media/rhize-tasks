@@ -5,6 +5,9 @@ on:
       config:
         type: string
         default: .github/ci/config.json
+      policy-script:
+        type: string
+        default: ""
       helper-directory:
         type: string
         default: .github/ci
@@ -24,6 +27,11 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Validate repository CI policy
+        if: ${{ inputs.policy-script != '' }}
+        env:
+          CI_POLICY_SCRIPT: ${{ inputs.policy-script }}
+        run: node "$CI_POLICY_SCRIPT"
       - name: Validate configuration and managed files
         id: config
         env:

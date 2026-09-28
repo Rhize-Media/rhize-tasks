@@ -313,3 +313,7 @@ requires a reviewed compatibility change. Weekly grouped minor/patch parser upda
 continue through CI. Application dependency updates and Actions updates retain their
 existing policies. This is an explicit compatibility and CI-cost policy, not a fix
 for the unresolved historical Dependabot HTTP 400 PR-creation errors.
+
+## CI review follow-up — September 27, 2026
+
+Managed CI now matches canonical Infra `e89aa676ac2865cb70f95693d000b0d902ec992a`: exact repository-marker validation, cleanup-safe disposable state creation, and regular SQL-only migration staging with symlink rejection. The optional repository policy hook runs in the existing job; it is disabled unless explicitly configured. These copies are checked against the canonical Git blobs during updates. Local manifests detect drift, not malicious edits to both code and metadata. Preview tree equality and narrative-doc skip policy are unchanged. This correction is committed locally for the next update batch; publish Infra before consumers. No new hosted result or production change is claimed.
