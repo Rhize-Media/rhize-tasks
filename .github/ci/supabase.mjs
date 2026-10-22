@@ -16,12 +16,34 @@ function cli(version,workdir,args,{capture=false,allowFailure=false,env=cleanEnv
   if (result.error || result.status !== 0) throw Error(`Supabase ${args[0]} failed (${result.status ?? result.error?.message})${result.stderr ? ': '+result.stderr.replace(/eyJ[A-Za-z0-9_.-]+/g,'[local JWT redacted]').replace(/sb_(secret|publishable)_[A-Za-z0-9_-]+/g,'[local key redacted]').replace(/(postgres(?:ql)?:\/\/[^:]+:)[^@]+@/g,'$1[redacted]@').slice(-4000) : ''}`);
   return result.stdout;
 }
-export function startDatabase(root,config) {
-  const temp=fs.mkdtempSync(path.join(os.tmpdir(),'rhize-ci-db-'));
-  const state={workdir:temp,version:config.version};
+export function copyMigrations(root,directory,target) {
+  const source=within(root,directory);
+  if (!fs.lstatSync(source).isDirectory() || fs.realpathSync(source) !== within(fs.realpathSync(root),directory)) throw Error('Migration directory must be a real repository directory');
+  const names=fs.readdirSync(source).filter(name=>name.endsWith('.sql')).sort();
+  if (!names.length || names.some(name=>!/^\d+_.+\.sql$/.test(name)) || new Set(names.map(name=>name.split('_')[0])).size !== names.length) throw Error('Missing, malformed or duplicate migrations');
+  for (const name of names) if (!fs.lstatSync(path.join(source,name)).isFile()) throw Error(`Migration must be a regular SQL file: ${name}`);
+  fs.mkdirSync(target,{recursive:true});
+  for (const name of names) fs.copyFileSync(path.join(source,name),path.join(target,name),fs.constants.COPYFILE_EXCL);
+}
+export function createDatabaseState(root,version) {
   const statefile=path.join(root,'.github/ci/.supabase-state.json');
+  // Reject an unusable state directory before allocating any temporary work.
   fs.mkdirSync(path.dirname(statefile),{recursive:true});
-  fs.writeFileSync(statefile,JSON.stringify(state),{mode:0o600});
+  const temp=fs.mkdtempSync(path.join(os.tmpdir(),'rhize-ci-db-'));
+  let fd;
+  try {
+    // Never replace another unfinished run's cleanup receipt.
+    fd=fs.openSync(statefile,'wx',0o600);
+    fs.writeFileSync(fd,JSON.stringify({workdir:temp,version}));
+  } catch(error) {
+    if (fd !== undefined) fs.unlinkSync(statefile);
+    fs.rmSync(temp,{recursive:true,force:true});
+    throw error;
+  } finally { if (fd !== undefined) fs.closeSync(fd); }
+  return temp;
+}
+export function startDatabase(root,config) {
+  const temp=createDatabaseState(root,config.version);
   try {
     cli(config.version,temp,['init']);
     const configFile=path.join(temp,'supabase/config.toml');
@@ -46,7 +68,7 @@ export function startDatabase(root,config) {
     if (config.databaseMajor) text=text.replace(/^(major_version = )\d+$/m,`$1${config.databaseMajor}`);
     if (typeof config.authSignup === 'boolean') text=text.replace(/(\[auth\][\s\S]*?enable_signup = )(true|false)/,`$1${config.authSignup}`);
     fs.writeFileSync(configFile,text);
-    fs.cpSync(within(root,config.migrations),path.join(temp,'supabase/migrations'),{recursive:true});
+    copyMigrations(root,config.migrations,path.join(temp,'supabase/migrations'));
     cli(config.version,temp,['start','--exclude','studio,mailpit,logflare,vector,supavisor,edge-runtime']);
     cli(config.version,temp,['db','reset','--local','--no-seed']);
     lintDatabase(config.version,temp,project);

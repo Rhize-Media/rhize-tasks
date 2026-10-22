@@ -7,7 +7,7 @@ export const helpers=['lib.mjs','env-docs.mjs','supabase.mjs','preview.mjs','run
 export function verifyManifest(root) {
   const manifest=JSON.parse(fs.readFileSync(path.join(root,'.github/ci/manifest.json'),'utf8'));
   const expected=['.github/workflows/node-ci.yml',...helpers.map(f=>'.github/ci/'+f)].sort();
-  if (manifest.schemaVersion !== 1 || !/^[a-f0-9]{40}$/.test(manifest.canonicalRevision) || JSON.stringify(Object.keys(manifest.files).sort()) !== JSON.stringify(expected)) throw Error('Invalid vendor manifest');
+  if (manifest.schemaVersion !== 1 || manifest.canonicalRepository !== 'Rhize-Media/rhize-infra' || !/^[a-f0-9]{40}$/.test(manifest.canonicalRevision) || JSON.stringify(Object.keys(manifest.files).sort()) !== JSON.stringify(expected)) throw Error('Invalid vendor manifest');
   for (const [file,digest] of Object.entries(manifest.files)) if (hash(fs.readFileSync(path.join(root,file))) !== digest) throw Error(`Vendored CI file changed: ${file}`);
   return manifest;
 }

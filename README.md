@@ -35,7 +35,7 @@ entries) is untouched.
 ## Requirements
 
 - macOS 14 or newer.
-- Node.js 22 or newer.
+- Node.js **24.22.1 or newer patched 24.x** is recommended for security maintenance. The runtime retains its Node >=22 compatibility requirement; this is not a guarantee that every older 22.x build is patched.
 - `/usr/bin/security`, `/bin/launchctl`, `/usr/bin/swift`, `/usr/bin/codesign`, and `/usr/bin/sw_vers`.
 - Xcode or Command Line Tools capable of building the Swift 6 EventKit package. Some Command Line Tools-only installations cannot resolve the macOS framework/toolchain combination even when `swift` is present; install or select a compatible full Xcode toolchain before treating that as an application defect.
 - Loopback port `43179` available.
@@ -43,7 +43,7 @@ entries) is untouched.
 - The Google Cloud OAuth app must be in **Production** publishing status. Testing status force-expires refresh tokens after 7 days, which surfaces as a weekly `revoked` calendar.
 - macOS Reminders permission for the installed helper app. Grant access only when the setup wizard runs its explicit check. Note: with the default ad-hoc code signature, macOS re-prompts for this grant after each plugin update; installing a Developer ID Application certificate in the keychain makes the grant persist (the installer detects and uses it automatically).
 
-The installer validates these requirements before activation. It does not perform a live Jira, Calendar, Reminders, or Slack write during installation.
+The installer validates these requirements before activation. It does not perform a live Jira, Calendar, Reminders, or Slack write during installation. Check the actual executable with `node --version` after updating. An installed LaunchAgent keeps the Node path recorded in `installation.json`; updating a shell version alone does not update or restart that running service. Follow the normal reviewed installer upgrade when its pinned runtime needs replacement. See the [October 21, 2026 Node.js security release](https://nodejs.org/en/blog/vulnerability/october-2026-security-releases).
 
 ## Running under Claude Cowork / non-macOS environments
 
@@ -255,6 +255,17 @@ swift test --package-path native/reminders-helper
 node installer/install.mjs --check
 ```
 
+On Command Line Tools installations where `swift test` reports `no such module 'Testing'` even though `/Library/Developer/CommandLineTools/Library/Developer/Frameworks/Testing.framework` exists, supply that installed framework's search path for this test invocation:
+
+```bash
+swift test --package-path native/reminders-helper \
+  -Xswiftc -F -Xswiftc /Library/Developer/CommandLineTools/Library/Developer/Frameworks \
+  -Xlinker -F -Xlinker /Library/Developer/CommandLineTools/Library/Developer/Frameworks \
+  -Xlinker -rpath -Xlinker /Library/Developer/CommandLineTools/Library/Developer/Frameworks
+```
+
+This keeps every Swift test enabled and changes no global toolchain selection. If the framework is absent, select a compatible full Xcode toolchain instead.
+
 `node --test` covers the service, installer (including `--check` and source provenance), and connectors. The delegation parser's producer-side contract (the message format the `rhize-ops` plugin's `delegate-to-teammate` skill writes) is pinned in the marketplace repository (`Rhize-Media/rhize-plugins`, `tests/rhize-ops/fixtures/delegation-parser-contract.json`, regenerated from this repository at a tagged release); the parser's own tests live here.
 
 `npm run validate` is not a release gate — it only checks that `package.json` is syntactically valid JSON. Treat it as a quick manifest sanity check, not a substitute for the tests above.
@@ -285,7 +296,7 @@ reads; they do not claim that all possible child-process environment names are e
 
 ## CI and release evidence
 
-Linux CI runs the existing `npm run validate` and `npm test` contracts and the deterministic
+When Actions are authorized, Linux CI uses the explicitly configured Node 24.22.1 runtime and runs the existing `npm run validate` and `npm test` contracts and the deterministic
 environment-doc check. Runtime dependencies and install/build behavior remain unchanged. An
 isolated `.github/ci-tools` package pins TypeScript solely for the shared AST documentation
 checker. Its lockfile install is cached; it is not a runtime dependency.
@@ -313,3 +324,19 @@ requires a reviewed compatibility change. Weekly grouped minor/patch parser upda
 continue through CI. Application dependency updates and Actions updates retain their
 existing policies. This is an explicit compatibility and CI-cost policy, not a fix
 for the unresolved historical Dependabot HTTP 400 PR-creation errors.
+
+## CI review follow-up — October 22, 2026
+
+Managed CI now matches canonical Infra `e89aa676ac2865cb70f95693d000b0d902ec992a`: exact repository-marker validation, cleanup-safe disposable state creation, and regular SQL-only migration staging with symlink rejection. The optional repository policy hook runs in the existing job; it is disabled unless explicitly configured. These copies are checked against the canonical Git blobs during updates. Local manifests detect drift, not malicious edits to both code and metadata. Preview tree equality and narrative-doc skip policy are unchanged. The canonical revision is already published in Infra. PR #3 is reviewed with local checks only at the user's request because GitHub Actions credits are exhausted; both its pushed head and main merge commit use `[skip ci]`. This suppresses automatic push/PR workflows for these commits without changing future workflow policy. No new hosted CI result, runtime release, installed-service update or live connector acceptance is claimed.
+
+### Local-only PR verification
+
+Run the frozen CI parser install and the same consumer runner locally, using the patched Node runtime:
+
+```bash
+npm ci --prefix .github/ci-tools --ignore-scripts --no-audit --no-fund
+node .github/ci/run.mjs docs .github/ci/config.json
+node .github/ci/run.mjs run .github/ci/config.json
+```
+
+The runner checks the managed manifest, environment documentation, package validation and full application suite. The macOS Swift tests and read-only installer preflight in **Validation** above remain separate checks. Updating managed helper bytes requires comparison against the manifest's exact canonical Git revision; changing code and recorded hashes together is not independent provenance validation.

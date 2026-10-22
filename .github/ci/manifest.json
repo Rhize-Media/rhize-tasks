@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
   "canonicalRepository": "Rhize-Media/rhize-infra",
-  "canonicalRevision": "662b820334ab1ddb25ca75720b1c28f7afb27893",
+  "canonicalRevision": "e89aa676ac2865cb70f95693d000b0d902ec992a",
   "files": {
-    ".github/workflows/node-ci.yml": "00edd1204c08f752afa87936dfb88ca943e89590d41bb19de9f0266570f6d537",
-    ".github/ci/lib.mjs": "db9b00d0d48ea724feff821c2a339dcc9deabc62f48f24b55c5f7d6102e4aec5",
-    ".github/ci/env-docs.mjs": "8bb3cc7164d4a9dea8f05e23fda44c91a3d7b219b7de71a294268c95d0e74c18",
-    ".github/ci/supabase.mjs": "3020336306bc580817c8ed9543e3b166c10f722cae94e576894e452d2149d041",
+    ".github/workflows/node-ci.yml": "4edc918fd6b222ed20187e4e00a6931c8ce30d3749f26c462070861fdcd0d03f",
+    ".github/ci/lib.mjs": "cc034b042ac9097edf8100086491a2a3b7de2140c2a242cdd54f2dba62bdf3e1",
+    ".github/ci/env-docs.mjs": "4f966816c69258135857476ed856fdca984fb80a3599e74190b881f1a900eddc",
+    ".github/ci/supabase.mjs": "57758420694a8b4d837e7708203a2df409782ff91ff1b197e18b527da4fe26e5",
     ".github/ci/preview.mjs": "859617d2c91ca94078effa3680a69cd8f1acb428f7b32e5dc0419951a40a9994",
     ".github/ci/run.mjs": "d1b01ec182b6144b1664b3f5a2e7f17a0ebd53bf6cffff17a3392b4ac57fc39a",
-    ".github/ci/vendor.mjs": "a8dd61193cdc35f8eb5148e30c7cd2e0d74bdf355d3f02d707a6c6e03d9a78b2"
+    ".github/ci/vendor.mjs": "719b2e10fa7833c27185dcf84f3c577efa870862c3aa8ed257e5e2f15ef168c3"
   }
 }
